@@ -1,0 +1,40 @@
+{
+  "name": "mcp-fs",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A minimal Model Context Protocol (MCP) server and client for file system operations using LLMs.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ShashidharNagaral/mcp-fs.git"
+  },
+  "author": "Shashidhar Nagaral",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "filesystem",
+    "llm",
+    "typescript-sdk",
+    "mcp-server",
+    "mcp-client"
+  ],
+  "scripts": {
+    "start": "npm run server",
+    "server": "tsx src/server.ts",
+    "client": "tsx src/client.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.16.0",
+    "express": "^5.1.0",
+    "node-fetch": "^3.3.2",
+    "openai": "^5.10.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^20.19.9",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5.0.0"
+  }
+}
