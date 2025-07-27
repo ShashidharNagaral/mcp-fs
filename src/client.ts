@@ -1,4 +1,4 @@
-import { Client } from "@modelcontextprotocol/sdk/client";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp";
 import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types";
 import fetch from "node-fetch";
@@ -10,9 +10,7 @@ const MCP_SERVER_URL = "http://localhost:4001/mcp";
 
 // Replace this with any LLM endpoint you want (e.g., OpenAI, Ollama, Anthropic)
 const LLM_API_URL = "http://localhost:11434/api/chat";
-const LLM_MODEL = "llama3.2";
-// const LLM_MODEL = "qwen3:4b";
-// const LLM_MODEL = "phi4-mini";
+const LLM_MODEL = "mistral-nemo";
 
 /**
  * Sends a chat request to a generic LLM endpoint.
@@ -50,10 +48,7 @@ async function callLLM(
  * Queries the MCP server for available tools.
  */
 async function getToolList(client: Client) {
-  const result = await client.request(
-    { method: "tools/list", params: {} },
-    ListToolsResultSchema
-  );
+  const result = await client.listTools();
 
   console.log(
     "🛠️ Available tools:",
@@ -94,15 +89,19 @@ async function main() {
   const transport = new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL));
   const client = new Client({ name: "ollama-client", version: "1.0.0" });
   await client.connect(transport);
+  console.log(`🤖: I'm ${LLM_MODEL}`);
 
   const tools = await getToolList(client);
   const messages: ChatCompletionMessageParam[] = [];
 
   messages.push({
-    role: "system",
-    content: `You are an AI assistant with access to MCP tools. 
-    If you're unsure, ask clarifying questions. Always consider tool descriptions before responding.`,
+    role: "user",
+    content: `You are an AI assistant with access to MCP tools.
+    If you're unsure, ask clarifying questions. Always consider using the 'describeServer' tool.
+    Do not summarize the tool response,`,
   });
+
+  console.log("🤖:", await callLLM(messages, tools));
 
   console.log("💬 Chat started. Type your message (or 'exit' to quit):");
 
@@ -114,6 +113,8 @@ async function main() {
 
     // 1. Initial response from LLM
     const firstResponse = await callLLM(messages, tools);
+
+    console.log("💬 firstResponse: " + JSON.stringify(firstResponse));
 
     // 2. If no tool calls, show response
     if (!firstResponse.tool_calls?.length) {
