@@ -1,8 +1,10 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp";
-import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types";
 import fetch from "node-fetch";
-import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import {
+  ChatCompletionMessageParam,
+  ChatCompletionMessageToolCall,
+} from "openai/resources/chat/completions";
 import readline from "readline";
 
 // Configuration
@@ -111,20 +113,19 @@ async function main() {
 
     messages.push({ role: "user", content: userInput });
 
-    // 1. Initial response from LLM
-    const firstResponse = await callLLM(messages, tools);
+    const resp = await callLLM(messages, tools);
 
-    console.log("💬 firstResponse: " + JSON.stringify(firstResponse));
+    console.log("💬 LLM Response: " + JSON.stringify(resp));
 
-    // 2. If no tool calls, show response
-    if (!firstResponse.tool_calls?.length) {
-      console.log("🤖:", firstResponse.content);
-      messages.push({ role: "assistant", content: firstResponse.content });
+    // if no tool calls, show response
+    if (!resp.tool_calls?.length) {
+      console.log("🤖:", resp.content);
+      messages.push({ role: "assistant", content: resp.content });
       continue;
     }
 
     // 3. Handle multiple tool calls
-    const toolCalls = firstResponse.tool_calls;
+    const toolCalls: Array<ChatCompletionMessageToolCall> = resp.tool_calls;
     messages.push({
       role: "assistant",
       content: "",

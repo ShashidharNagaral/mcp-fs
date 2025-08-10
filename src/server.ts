@@ -1,9 +1,3 @@
-/**
- * MCP Filesystem Toolhost Server
- * Provides tools for basic file system operations: create, read, update, delete, append, and list.
- * Exposed via HTTP transport using the MCP (Model Context Protocol) SDK.
- */
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp";
 import express, { Request, Response } from "express";
@@ -11,122 +5,138 @@ import fs from "fs/promises";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-// Holds active HTTP transports per MCP session
+// Active HTTP transports per MCP session
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
 /**
- * Initializes and returns an MCP server instance with filesystem tools.
+ * Initialize and return an MCP server instance with filesystem tools.
+ * Logic unchanged; added structured logs only (no icons).
  */
 const getServer = () => {
+  console.log(
+    `MCP server init: name=fs-toolhost version=1.0.0 cwd=${process.cwd()}`
+  );
+
   const mcp = new McpServer({
     name: "fs-toolhost",
     version: "1.0.0",
   });
 
-  mcp.tool(
+  // describeServer
+  mcp.registerTool(
     "describeServer",
-    "Returns general information about this MCP server, its purpose, and how to interact with it.",
-    {},
+    {
+      title: "Describes Server",
+      description:
+        "Returns general information about this MCP server, its purpose, and how to interact with it.",
+    },
     async () => {
-      return {
+      const t0 = Date.now();
+      console.log(`[tool] describeServer start`);
+      const result = {
         content: [
           {
             type: "text",
-            text: `
-📡 MCP Filesystem Toolhost Server
+            text: `MCP Filesystem Toolhost Server
 
 This server provides file system operations such as:
-- 📄 createFile
-- ✏️ updateFile
-- 🧾 readFile
-- ➕ appendToFile
-- 🗑️ deleteFile
-- 📂 listFiles
+- createFile
+- updateFile
+- readFile
+- appendToFile
+- deleteFile
+- listFiles
 
-🧠 How to use:
+How to use:
 • Send a JSON-RPC 2.0 message to this server via /mcp endpoint.
 • Each tool expects specific parameters (path, content, etc.).
 • Use the tool 'describeTools' to get a list of all available tools with input schemas.
 
-🔍 Example call:
+Example call:
 {
   "jsonrpc": "2.0",
   "id": "1",
   "method": "readFile",
-  "params": {
-    "path": "./example.txt"
-  }
+  "params": { "path": "./example.txt" }
 }
 
-💡 Tip:
-You can dynamically explore all tools using the 'describeTools' method.
-This server is session-aware using the 'mcp-session-id' header.
-          `.trim(),
+Tip:
+Use the 'describeTools' method to explore all tools.
+This server is session-aware via the 'mcp-session-id' header.`,
           },
         ],
       };
+      console.log(
+        `[tool] describeServer success duration=${Date.now() - t0}ms`
+      );
+      return result;
     }
   );
 
-  /**
-   * Tool: updateFile
-   * Overwrites content of an existing file at the given path.
-   */
-  mcp.tool(
+  // updateFile
+  mcp.registerTool(
     "updateFile",
-    "Overwrite the content of an existing file.",
     {
-      path: z
-        .string()
-        .describe("Path of the file to update")
-        .default(`${process.cwd()}/temp.cpp`),
-      content: z.string().describe("New content to overwrite the file with."),
+      title: "Updates a File",
+      description: "Overwrite the content of an existing file.",
+      inputSchema: {
+        path: z
+          .string()
+          .describe("Path of the file to update")
+          .default(`${process.cwd()}/temp.cpp`),
+        content: z.string().describe("New content to overwrite the file with."),
+      },
     },
     async ({ path, content }) => {
-      // Validate input
+      const t0 = Date.now();
+      console.log(
+        `[tool] updateFile start path="${path}" bytes=${content?.length ?? 0}`
+      );
+
       if (!path || typeof path !== "string" || path.trim() === "") {
+        console.warn(`[tool] updateFile invalid-arg path`);
         return {
           content: [
-            { type: "text", text: "❌ 'path' must be a non-empty string." },
+            { type: "text", text: "'path' must be a non-empty string." },
           ],
           isError: true,
         };
       }
 
-      // Ensure file exists before updating
       try {
         await fs.access(path);
       } catch {
+        console.warn(`[tool] updateFile not-found path="${path}"`);
         return {
           content: [
             {
               type: "text",
-              text: `❌ File not found at ${path}. Cannot update non-existent file.`,
+              text: `File not found at ${path}. Cannot update non-existent file.`,
             },
           ],
           isError: true,
         };
       }
 
-      // Attempt to write new content
       try {
         await fs.writeFile(path, content, "utf-8");
-        console.log(`✏️ Updated file at: ${path}`);
+        console.log(
+          `[tool] updateFile success path="${path}" duration=${
+            Date.now() - t0
+          }ms`
+        );
         return {
           content: [
-            {
-              type: "text",
-              text: `✅ File successfully updated at ${path}.`,
-            },
+            { type: "text", text: `File successfully updated at ${path}.` },
           ],
         };
       } catch (err: any) {
+        console.error(
+          `[tool] updateFile error path="${path}" msg=${err.message}`
+        );
         return {
           content: [
-            {
-              type: "text",
-              text: `❌ Failed to update file: ${err.message}`,
-            },
+            { type: "text", text: `Failed to update file: ${err.message}` },
           ],
           isError: true,
         };
@@ -134,29 +144,30 @@ This server is session-aware using the 'mcp-session-id' header.
     }
   );
 
-  /**
-   * Tool: deleteFile
-   * Deletes a file from disk. Folders are not allowed.
-   */
-  mcp.tool(
+  // deleteFile
+  mcp.registerTool(
     "deleteFile",
-    "Delete a file from the user's machine at the specified path.",
     {
-      path: z
-        .string()
-        .describe(
-          "Path to the file to delete. Only deletes files, not folders."
-        ),
+      title: "Delete a File",
+      description:
+        "Delete a file from the user's machine at the specified path.",
+      inputSchema: {
+        path: z
+          .string()
+          .describe(
+            "Path to the file to delete. Only deletes files, not folders."
+          ),
+      },
     },
     async ({ path }) => {
-      // Validate path
+      const t0 = Date.now();
+      console.log(`[tool] deleteFile start path="${path}"`);
+
       if (!path || typeof path !== "string" || path.trim() === "") {
+        console.warn(`[tool] deleteFile invalid-arg path`);
         return {
           content: [
-            {
-              type: "text",
-              text: "❌ 'path' must be a non-empty string.",
-            },
+            { type: "text", text: "'path' must be a non-empty string." },
           ],
           isError: true,
         };
@@ -164,14 +175,13 @@ This server is session-aware using the 'mcp-session-id' header.
 
       try {
         const stat = await fs.stat(path);
-
-        // Reject if path is a directory
         if (stat.isDirectory()) {
+          console.warn(`[tool] deleteFile is-directory path="${path}"`);
           return {
             content: [
               {
                 type: "text",
-                text: `⚠️ '${path}' is a directory. Use a directory-specific tool to delete folders.`,
+                text: `'${path}' is a directory. Use a directory-specific tool to delete folders.`,
               },
             ],
             isError: true,
@@ -179,35 +189,30 @@ This server is session-aware using the 'mcp-session-id' header.
         }
 
         await fs.unlink(path);
-        console.log(`🗑️ File deleted: ${path}`);
-
+        console.log(
+          `[tool] deleteFile success path="${path}" duration=${
+            Date.now() - t0
+          }ms`
+        );
         return {
           content: [
-            {
-              type: "text",
-              text: `🗑️ File successfully deleted: ${path}`,
-            },
+            { type: "text", text: `File successfully deleted: ${path}` },
           ],
         };
       } catch (err: any) {
         if (err.code === "ENOENT") {
+          console.warn(`[tool] deleteFile not-found path="${path}"`);
           return {
-            content: [
-              {
-                type: "text",
-                text: `❌ File not found at ${path}.`,
-              },
-            ],
+            content: [{ type: "text", text: `File not found at ${path}.` }],
             isError: true,
           };
         }
-
+        console.error(
+          `[tool] deleteFile error path="${path}" msg=${err.message}`
+        );
         return {
           content: [
-            {
-              type: "text",
-              text: `❌ Failed to delete file: ${err.message}`,
-            },
+            { type: "text", text: `Failed to delete file: ${err.message}` },
           ],
           isError: true,
         };
@@ -215,25 +220,28 @@ This server is session-aware using the 'mcp-session-id' header.
     }
   );
 
-  /**
-   * Tool: readFile
-   * Reads and returns file content from the specified path.
-   */
-  mcp.tool(
+  // readFile
+  mcp.registerTool(
     "readFile",
-    "Read and return the content of a file at the given path.",
     {
-      path: z
-        .string()
-        .describe("Path to the file you want to read.")
-        .default(`${process.cwd()}/example.txt`),
+      title: "Read a file",
+      description: "Read and return the content of a file at the given path.",
+      inputSchema: {
+        path: z
+          .string()
+          .describe("Path to the file you want to read.")
+          .default(`${process.cwd()}/example.txt`),
+      },
     },
     async ({ path }) => {
-      // Validate path
+      const t0 = Date.now();
+      console.log(`[tool] readFile start path="${path}"`);
+
       if (!path || typeof path !== "string" || path.trim() === "") {
+        console.warn(`[tool] readFile invalid-arg path`);
         return {
           content: [
-            { type: "text", text: "❌ 'path' must be a non-empty string." },
+            { type: "text", text: "'path' must be a non-empty string." },
           ],
           isError: true,
         };
@@ -241,29 +249,33 @@ This server is session-aware using the 'mcp-session-id' header.
 
       try {
         const fileContent = await fs.readFile(path, "utf-8");
-
+        console.log(
+          `[tool] readFile success path="${path}" bytes=${
+            fileContent.length
+          } duration=${Date.now() - t0}ms`
+        );
         return {
           content: [
             {
               type: "text",
-              text: `📄 Content of ${path}:\n\n\`\`\` is \n${fileContent}\n\`\`\``,
+              text: `Content of ${path}:\n\n\`\`\`\n${fileContent}\n\`\`\``,
             },
           ],
         };
       } catch (err: any) {
         if (err.code === "ENOENT") {
+          console.warn(`[tool] readFile not-found path="${path}"`);
           return {
-            content: [{ type: "text", text: `❌ File not found at ${path}.` }],
+            content: [{ type: "text", text: `File not found at ${path}.` }],
             isError: true,
           };
         }
-
+        console.error(
+          `[tool] readFile error path="${path}" msg=${err.message}`
+        );
         return {
           content: [
-            {
-              type: "text",
-              text: `❌ Error reading file: ${err.message}`,
-            },
+            { type: "text", text: `Error reading file: ${err.message}` },
           ],
           isError: true,
         };
@@ -271,28 +283,36 @@ This server is session-aware using the 'mcp-session-id' header.
     }
   );
 
-  /**
-   * Tool: appendToFile
-   * Appends content to an existing file.
-   */
-  mcp.tool(
+  // appendToFile
+  mcp.registerTool(
     "appendToFile",
-    "Append text content to a file.",
     {
-      path: z
-        .string()
-        .describe("Path to file")
-        .default(`${process.cwd()}/new.txt`),
-      content: z
-        .string()
-        .describe("Text to append")
-        .default("📎 Appended content from the MCP tool."),
+      title: "Append Content to a File",
+      description: "Append text content to an existing file.",
+      inputSchema: {
+        path: z
+          .string()
+          .describe("Path to file")
+          .default(`${process.cwd()}/new.txt`),
+        content: z
+          .string()
+          .describe("Text to append")
+          .default("Appended content from the MCP tool."),
+      },
     },
     async ({ path, content }) => {
+      const t0 = Date.now();
+      console.log(
+        `[tool] appendToFile start path="${path}" appendBytes=${
+          content?.length ?? 0
+        }`
+      );
+
       if (!path || typeof path !== "string" || path.trim() === "") {
+        console.warn(`[tool] appendToFile invalid-arg path`);
         return {
           content: [
-            { type: "text", text: "❌ 'path' must be a non-empty string." },
+            { type: "text", text: "'path' must be a non-empty string." },
           ],
           isError: true,
         };
@@ -300,23 +320,26 @@ This server is session-aware using the 'mcp-session-id' header.
 
       try {
         await fs.appendFile(path, content + "\n", "utf-8");
-        console.log(`➕ Appended to file: ${path}`);
-
+        console.log(
+          `[tool] appendToFile success path="${path}" duration=${
+            Date.now() - t0
+          }ms`
+        );
         return {
           content: [
             {
               type: "text",
-              text: `✅ Content appended to ${path} (${content.length} characters).`,
+              text: `Content appended to ${path} (${content.length} characters).`,
             },
           ],
         };
       } catch (err: any) {
+        console.error(
+          `[tool] appendToFile error path="${path}" msg=${err.message}`
+        );
         return {
           content: [
-            {
-              type: "text",
-              text: `❌ Failed to append to file: ${err.message}`,
-            },
+            { type: "text", text: `Failed to append to file: ${err.message}` },
           ],
           isError: true,
         };
@@ -324,29 +347,38 @@ This server is session-aware using the 'mcp-session-id' header.
     }
   );
 
-  /**
-   * Tool: createFile
-   * Creates a new file and writes content. Prevents overwriting existing files.
-   */
-  mcp.tool(
+  // createFile
+  mcp.registerTool(
     "createFile",
-    "Create a new file on the user's machine via the external tool server.",
     {
-      path: z
-        .string()
-        .describe(
-          `Path where the file should be created (including filename). Default Path = ${process.cwd()}`
-        )
-        .default(process.cwd()),
-      content: z.string().describe("Content to write into the file").optional(),
+      title: "Create a new File",
+      description:
+        "Create a new file on the user's machine via the external tool server.",
+      inputSchema: {
+        path: z
+          .string()
+          .describe(
+            `Path where the file should be created (including filename). Default Path = ${process.cwd()}`
+          )
+          .default(process.cwd()),
+        content: z
+          .string()
+          .describe("Content to write into the file")
+          .optional(),
+      },
     },
     async (params) => {
+      const t0 = Date.now();
       const { path, content } = params;
+      console.log(
+        `[tool] createFile start path="${path}" bytes=${content?.length ?? 0}`
+      );
 
       if (!path || typeof path !== "string" || path.trim() === "") {
+        console.warn(`[tool] createFile invalid-arg path`);
         return {
           content: [
-            { type: "text", text: "❌ 'path' must be a non-empty string." },
+            { type: "text", text: "'path' must be a non-empty string." },
           ],
           isError: true,
         };
@@ -355,33 +387,35 @@ This server is session-aware using the 'mcp-session-id' header.
       const finalContent =
         typeof content === "string" && content.trim()
           ? content
-          : "📄 Default file content generated by the MCP tool.";
+          : "Default file content generated by the MCP tool.";
 
       try {
-        // Check if file exists to prevent overwrite
         try {
           await fs.access(path);
+          console.warn(`[tool] createFile path-exists path="${path}"`);
           return {
             content: [
               {
                 type: "text",
-                text: `⚠️ A file already exists at ${path}. File creation aborted to prevent overwrite.`,
+                text: `A file already exists at ${path}. Creation aborted.`,
               },
             ],
             isError: true,
           };
-        } catch {}
+        } catch {
+          // ok, does not exist
+        }
 
-        // Ensure parent directory exists
         const parentDir = path.split("/").slice(0, -1).join("/") || ".";
         try {
           await fs.access(parentDir);
         } catch {
+          console.warn(`[tool] createFile parent-missing dir="${parentDir}"`);
           return {
             content: [
               {
                 type: "text",
-                text: `❌ Parent directory "${parentDir}" does not exist.`,
+                text: `Parent directory "${parentDir}" does not exist.`,
               },
             ],
             isError: true,
@@ -389,22 +423,28 @@ This server is session-aware using the 'mcp-session-id' header.
         }
 
         await fs.writeFile(path, finalContent, "utf-8");
-        console.log(`📝 File created at: ${path}`);
-
+        console.log(
+          `[tool] createFile success path="${path}" bytes=${
+            finalContent.length
+          } duration=${Date.now() - t0}ms`
+        );
         return {
           content: [
             {
               type: "text",
-              text: `✅ File created at ${path} with ${finalContent.length} characters.`,
+              text: `File created at ${path} with ${finalContent.length} characters.`,
             },
           ],
         };
       } catch (err: any) {
+        console.error(
+          `[tool] createFile error path="${path}" msg=${err.message}`
+        );
         return {
           content: [
             {
               type: "text",
-              text: `❌ Unexpected error while creating file: ${err.message}`,
+              text: `Unexpected error while creating file: ${err.message}`,
             },
           ],
           isError: true,
@@ -413,29 +453,32 @@ This server is session-aware using the 'mcp-session-id' header.
     }
   );
 
-  /**
-   * Tool: listFiles
-   * Lists files in the given directory.
-   */
-  mcp.tool(
+  // listFiles
+  mcp.registerTool(
     "listFiles",
-    `List files in a directory on the user's machine, called via an external tool server.`,
     {
-      path: z
-        .string()
-        .describe(
-          `path to the directory, Default path of the mcp server is ${process.cwd()}`
-        )
-        .default(process.cwd()),
+      title: "List Files",
+      description:
+        "List files in a directory on the user's machine, called via an external tool server.",
+      inputSchema: {
+        path: z
+          .string()
+          .describe(`path to the directory, default is ${process.cwd()}`)
+          .default(process.cwd()),
+      },
     },
     async (params) => {
+      const t0 = Date.now();
       const path = params?.path;
+      console.log(`[tool] listFiles start path="${path}"`);
+
       if (typeof path !== "string") {
+        console.warn(`[tool] listFiles invalid-arg path`);
         return {
           content: [
             {
               type: "text",
-              text: `❌ Invalid 'path' argument. Must be a string. Received: ${JSON.stringify(
+              text: `Invalid 'path' argument. Must be a string. Received: ${JSON.stringify(
                 params
               )}`,
             },
@@ -446,23 +489,23 @@ This server is session-aware using the 'mcp-session-id' header.
 
       try {
         const files = await fs.readdir(path);
-        console.log("path: " + path);
-        console.log("files: " + files);
+        console.log(
+          `[tool] listFiles success path="${path}" | file count=${
+            files.length
+          } | duration=${Date.now() - t0}ms`
+        );
         return {
           content: [
-            {
-              type: "text",
-              text: `📁 Files in ${path}: ${files.join(", ")}`,
-            },
+            { type: "text", text: `Files in ${path}: ${files.join(", ")}` },
           ],
         };
       } catch (err: any) {
+        console.error(
+          `[tool] listFiles error path="${path}" msg=${err.message}`
+        );
         return {
           content: [
-            {
-              type: "text",
-              text: `⚠️ Error reading directory: ${err.message}`,
-            },
+            { type: "text", text: `Error reading directory: ${err.message}` },
           ],
           isError: true,
         };
@@ -470,6 +513,9 @@ This server is session-aware using the 'mcp-session-id' header.
     }
   );
 
+  console.log(
+    `MCP tools registered: describeServer, updateFile, deleteFile, readFile, appendToFile, createFile, listFiles`
+  );
   return mcp;
 };
 
@@ -478,6 +524,19 @@ This server is session-aware using the 'mcp-session-id' header.
 const MCP_PORT = 4001;
 const app = express();
 app.use(express.json());
+
+// Simple request log (method, path, session, rpc method, id)
+app.use((req, _res, next) => {
+  const sid = req.headers["mcp-session-id"] ?? "none";
+  const m = (req.body && req.body.method) || "unknown";
+  const id = (req.body && req.body.id) || "n/a";
+  console.log(
+    `http request: ${req.method} ${req.path} sid=${String(
+      sid
+    )} rpc.method=${m} id=${id}`
+  );
+  next();
+});
 
 /**
  * HTTP POST endpoint for receiving MCP requests.
@@ -489,29 +548,37 @@ app.post("/mcp", async (req: Request, res: Response) => {
   let transport: StreamableHTTPServerTransport;
 
   if (sessionId && transports[sessionId]) {
-    // Reuse existing transport
     transport = transports[sessionId];
+    console.log(`session reuse: ${sessionId}`);
   } else {
-    // Create new transport and session
     const mcp = getServer();
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sid) => {
         transports[sid] = transport;
-        console.log(`Session initialized: ${sid}`);
+        console.log(`session init: ${sid}`);
       },
     });
 
     await mcp.connect(transport);
+    console.log(`transport connected`);
   }
 
-  // Handle incoming MCP request
   await transport.handleRequest(req, res, req.body);
+  console.log(`request handled: session=${transport.sessionId ?? "unknown"}`);
 });
 
 /**
- * Starts the Express server to serve MCP tools.
+ * Start the Express server.
  */
 app.listen(MCP_PORT, () => {
-  console.log(`✅ MCP FS Server running on http://localhost:${MCP_PORT}/mcp`);
+  console.log(`MCP-FS server listening on http://localhost:${MCP_PORT}/mcp`);
+});
+
+// Process-level error logs
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandledRejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("uncaughtException:", err);
 });
