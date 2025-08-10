@@ -1,55 +1,25 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp";
-import fetch from "node-fetch";
 import {
+  ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
   ChatCompletionMessageToolCall,
+  ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import readline from "readline";
+import { OllamaProvider } from "./OllamaProvider";
 
 // Configuration
 const MCP_SERVER_URL = "http://localhost:4001/mcp";
 
 // Replace this with any LLM endpoint you want (e.g., OpenAI, Ollama, Anthropic)
 const LLM_API_URL = "http://localhost:11434/api/chat";
-const LLM_MODEL = "mistral-nemo";
-
-/**
- * Sends a chat request to a generic LLM endpoint.
- * @param messages - Conversation history
- * @param tools - Tools defined in OpenAI-compatible schema
- */
-async function callLLM(
-  messages: ChatCompletionMessageParam[],
-  tools: any[]
-): Promise<ChatCompletionMessageParam> {
-  const body = {
-    model: LLM_MODEL,
-    messages,
-    tools,
-    think: false,
-    stream: false,
-  };
-
-  console.log("📤 Sending prompt to LLM:", JSON.stringify(messages, null, 2));
-
-  const res = await fetch(LLM_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  const data = await res.json();
-  console.log("📥 LLM response:", JSON.stringify(data));
-  return (
-    data?.message ?? { role: "assistant", content: "⚠️ No message received." }
-  );
-}
+const LLM_MODEL = "qwen3:4b";
 
 /**
  * Queries the MCP server for available tools.
  */
-async function getToolList(client: Client) {
+async function getToolList(client: Client): Promise<ChatCompletionTool[]> {
   const result = await client.listTools();
 
   console.log(
@@ -93,8 +63,10 @@ async function main() {
   await client.connect(transport);
   console.log(`🤖: I'm ${LLM_MODEL}`);
 
-  const tools = await getToolList(client);
+  const tools: ChatCompletionTool[] = await getToolList(client);
   const messages: ChatCompletionMessageParam[] = [];
+
+  const llm = new OllamaProvider(LLM_MODEL, LLM_API_URL);
 
   messages.push({
     role: "user",
@@ -103,7 +75,7 @@ async function main() {
     Do not summarize the tool response,`,
   });
 
-  console.log("🤖:", await callLLM(messages, tools));
+  console.log("🤖:", await llm.chat(messages, tools));
 
   console.log("💬 Chat started. Type your message (or 'exit' to quit):");
 
@@ -113,21 +85,24 @@ async function main() {
 
     messages.push({ role: "user", content: userInput });
 
-    const resp = await callLLM(messages, tools);
+    const resp: ChatCompletionAssistantMessageParam = await llm.chat(
+      messages,
+      tools
+    );
 
     console.log("💬 LLM Response: " + JSON.stringify(resp));
 
     // if no tool calls, show response
     if (!resp.tool_calls?.length) {
       console.log("🤖:", resp.content);
-      messages.push({ role: "assistant", content: resp.content });
+      messages.push({ role: resp.role, content: resp.content });
       continue;
     }
 
     // 3. Handle multiple tool calls
     const toolCalls: Array<ChatCompletionMessageToolCall> = resp.tool_calls;
     messages.push({
-      role: "assistant",
+      role: resp.role,
       content: "",
       tool_calls: toolCalls,
     });
@@ -166,7 +141,7 @@ async function main() {
       i++;
     }, 1000);
 
-    const finalResponse = await callLLM(messages, tools);
+    const finalResponse = await llm.chat(messages, tools);
 
     clearInterval(spinner); // stop spinner after response
     console.log("🤖:", finalResponse.content);
